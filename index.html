@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Locke Bible</title>
+  <link rel="icon" type="image/png" href="images/summoners/Locke_R.png">
+  <link rel="stylesheet" href="style.css">
+    <!-- Discord / Open Graph embed -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="The Locke Bible">
+  <meta property="og:description" content="From dust - to dust. Learn about Locke here!">
+  <meta property="og:image" content="https://lxver8.github.io/Locke/images/splashes/High_Noon_Locke.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="theme-color" content="#c8aa6e">
+  <!-- Twitter fallback (for other platforms) -->
+  <meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <span id="intro-back-btn" class="intro-back-btn" onclick="resetToIntro()">Back to Intro</span>
+<div class="role-filters">
+  <button class="role-btn" data-role="Top" title="Top">
+    <img src="images/roles/Top.png" alt="Top">
+  </button>
+  <button class="role-btn" data-role="Jungle" title="Jungle">
+    <img src="images/roles/Jungle.png" alt="Jungle">
+  </button>
+  <button class="role-btn" data-role="Mid" title="Middle">
+    <img src="images/roles/Mid.png" alt="Mid">
+  </button>
+  <button class="role-btn" data-role="Bot" title="Bottom">
+    <img src="images/roles/Bot.png" alt="Bot">
+  </button>
+  <button class="role-btn" data-role="Support" title="Support">
+    <img src="images/roles/Support.png" alt="Support">
+  </button>
+</div>
+    </div>
+    <div class="header-center">
+      <h1>The Locke Bible</h1>
+      <div class="header-search">
+        <input type="text" id="search-input" placeholder="Search champion..." autocomplete="off" />
+      </div>
+    </div>
+    <div class="header-right">
+      <button id="creators-btn" class="creators-btn" onclick="showCreatorsPage()">Content Creators</button>
+      <button id="tierlist-btn" class="creators-btn" onclick="showTierlist()">Difficulty Tierlist</button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <div id="splash-bg" class="splash-background" style="background-image: url('images/splashes/High_Noon_Locke.jpg');"></div>
+
+    <div class="champion-sidebar">
+      <div id="champion-list" class="champion-list"></div>
+    </div>
+
+    <div id="info-panel" class="info-panel">
+      <!-- intro rendered here -->
+    </div>
+  </div>
+
+  <!-- Custom tooltip element -->
+  <div id="custom-tooltip"></div>
+
+  <script>
+    // ---------- GLOBALS ----------
+    let allChampionItems = [];
+    const dataCache = {};
+    const championSearchTerms = {};
+    let runeData = null;
+    let runeMap = {};
+    let currentPatchVersion = '';
+    let introData = null;
+    let activeChampionItem = null;
+
+    const introBackBtn = document.getElementById('intro-back-btn');
+
+    const CUSTOM_SPLASHES = {
+      "Fiddlesticks": "images/splashes/Fiddlesticks.jpg"
+    };
+
+    const ABBREV_TO_CHAMP = {
+      "asol": "Aurelion Sol",
+      "belveth": "Bel'Veth",
+      "bv": "Bel'Veth",
+      "chogath": "Cho'Gath",
+      "mundo": "Dr. Mundo",
+      "doctor": "Dr. Mundo",
+      "gp": "Gangplank",
+      "IV": "Jarvan IV",
+      "j4": "Jarvan IV",
+      "kaisa": "Kai'Sa",
+      "ks": ["Kai'Sa", "K'Sante"],
+      "khazix": "Kha'Zix",
+      "kz": "Kha'Zix",
+      "kogmaw": "Kog'Maw",
+      "km": "Kog'Maw",
+      "ksante": "K'Sante",
+      "lb": "LeBlanc",
+      "yi": "Master Yi",
+      "mf": "Miss Fortune",
+      "rek'sai": "Rek'Sai",
+      "rs": "Rek'Sai",
+      "rg": "Renata Glasc",
+      "tk": "Tahm Kench",
+      "tf": "Twisted Fate",
+      "velkoz": "Vel'Koz",
+      "vk": "Vel'Koz"
+    };
+
+    const STAT_ROWS = [
+      {
+        options: [
+          { name: "Adaptive Force", file: "Adaptive_Force" },
+          { name: "Attack Speed", file: "Attack_Speed" },
+          { name: "Ability Haste", file: "Ability_Haste" }
+        ]
+      },
+      {
+        options: [
+          { name: "Adaptive Force", file: "Adaptive_Force" },
+          { name: "Movement Speed", file: "Movement_Speed" },
+          { name: "Health Scaling", file: "Health_Scaling" }
+        ]
+      },
+      {
+        options: [
+          { name: "Health Flat", file: "Health_Flat" },
+          { name: "Tenacity", file: "Tenacity" },
+          { name: "Health Scaling", file: "Health_Scaling" }
+        ]
+      }
+    ];
+
+    // ---------- ROLE FILTERING ----------
+    let selectedRoles = new Set();               // currently toggled-on roles
+    let championRoles = {};                      // will be loaded from championRoles.json
+
+    // Load the mapping
+    async function loadChampionRoles() {
+      try {
+        const res = await fetch('championRoles.json');
+        if (res.ok) {
+          championRoles = await res.json();
+        } else {
+          console.warn('championRoles.json not found – filtering disabled');
+        }
+      } catch (e) {
+        console.warn('Failed to load championRoles.json:', e);
+      }
+    }
+
+    // Update the champion list based on search + selected roles
+    function applyFilters() {
+      const query = document.getElementById('search-input').value.toLowerCase().trim();
+
+      allChampionItems.forEach(item => {
+        const champId = item.dataset.championId;
+        const champName = item.dataset.championName;
+        const terms = championSearchTerms[champId] || [champName];
+
+        // Search match
+        const matchesSearch = query === '' || terms.some(term => term.includes(query));
+
+        // Role match: if no roles selected → show all; otherwise champion must have at least one of the selected roles
+        let matchesRole = true;
+        if (selectedRoles.size > 0 && championRoles[champId]) {
+          matchesRole = championRoles[champId].some(role => selectedRoles.has(role));
+        } else if (selectedRoles.size > 0) {
+          matchesRole = false; // champion has no role data, hide if filter is active
+        }
+
+        if (matchesSearch && matchesRole) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+
+      // Show/hide "no results" message
+      const visible = allChampionItems.some(item => item.style.display !== 'none');
+      let noResultsEl = document.querySelector('.no-results');
+      if (!visible && !noResultsEl) {
+        noResultsEl = document.createElement('p');
+        noResultsEl.className = 'no-results';
+        noResultsEl.textContent = 'No champions match your filters.';
+        document.getElementById('champion-list').appendChild(noResultsEl);
+      } else if (visible && noResultsEl) {
+        noResultsEl.remove();
+      }
+    }
+
+    // Toggle a role on/off and refresh the list
+    function toggleRole(role) {
+      if (selectedRoles.has(role)) {
+        selectedRoles.delete(role);
+      } else {
+        selectedRoles.add(role);
+      }
+      updateRoleButtonStates();
+      applyFilters();
+    }
+
+    // Visual active state on the buttons
+    function updateRoleButtonStates() {
+      document.querySelectorAll('.role-btn').forEach(btn => {
+        const role = btn.dataset.role;
+        if (selectedRoles.has(role)) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    }
+
+    // ---------- CUSTOM TOOLTIP LOGIC ----------
+    const tooltip = document.getElementById('custom-tooltip');
+    let currentTooltipTarget = null;
+
+    function updateTooltipText(target) {
+      const text = target.getAttribute('data-tooltip');
+      if (text) tooltip.textContent = text;
+    }
+
+    function positionTooltip(e) {
+      const x = e.clientX;
+      const y = e.clientY;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top  = y + 'px';
+
+      const rect = tooltip.getBoundingClientRect();
+      if (rect.right > window.innerWidth) {
+        tooltip.style.left = (x - rect.width) + 'px';
+      }
+      if (rect.bottom > window.innerHeight) {
+        tooltip.style.top = (y - rect.height - 10) + 'px';
+      }
+    }
+
+    function showTooltip(e) {
+      const target = e.target.closest('[data-tooltip]');
+      if (!target) {
+        hideTooltip();
+        return;
+      }
+      if (currentTooltipTarget !== target) {
+        updateTooltipText(target);
+        tooltip.classList.add('visible');
+        currentTooltipTarget = target;
+      }
+      positionTooltip(e);
+    }
+
+    function hideTooltip() {
+      tooltip.classList.remove('visible');
+      currentTooltipTarget = null;
+    }
+
+    document.addEventListener('mousemove', (e) => {
+      const target = e.target.closest('[data-tooltip]');
+      if (target) {
+        showTooltip(e);
+      } else {
+        hideTooltip();
+      }
+    });
+
+    document.addEventListener('mouseleave', hideTooltip);
+
+    // ---------- LOAD INTRO DATA ----------
+    async function loadIntroData() {
+      try {
+        const res = await fetch('intro.json');
+        if (res.ok) {
+          introData = await res.json();
+        } else {
+          throw new Error('intro.json not found');
+        }
+      } catch (e) {
+        console.warn('Could not load intro.json, using fallback message.');
+        introData = null;
+      }
+      if (!activeChampionItem) {
+        renderIntro();
+      }
+    }
+
+    function renderIntro() {
+      const infoPanel = document.getElementById('info-panel');
+      if (!introData || !introData.sections || introData.sections.length === 0) {
+        infoPanel.innerHTML = `<p class="placeholder-message" style="text-align:center;margin-top:5rem;font-size:1.3rem;color:#5a5244;">Click a champion to see matchup info</p>`;
+        return;
+      }
+      let html = `<div class="champion-detail">`;
+      if (introData.title) {
+        html += `<h2>${introData.title}</h2>`;
+      }
+      introData.sections.forEach(section => {
+        html += `<div class="info-slot"><h3>${section.heading || ''}</h3><div class="info-content">${section.content || ''}</div></div>`;
+      });
+      html += `</div>`;
+      infoPanel.innerHTML = html;
+    }
+
+    // ---------- RESET TO INTRO ----------
+    function resetToIntro() {
+      if (activeChampionItem) {
+        activeChampionItem.classList.remove('active');
+        activeChampionItem = null;
+      }
+      setSplashBackground(null);
+      renderIntro();
+    }
+
+    function showCreatorsPage() {
+      if (activeChampionItem) {
+        activeChampionItem.classList.remove('active');
+        activeChampionItem = null;
+      }
+      introBackBtn.style.display = 'inline';
+      setSplashBackground(null);
+
+      const infoPanel = document.getElementById('info-panel');
+      infoPanel.innerHTML = '<p style="text-align:center;margin-top:2rem;">Loading creators…</p>';
+
+      fetch('creators.html')
+        .then(response => {
+          if (!response.ok) throw new Error('creators.html not found');
+          return response.text();
+        })
+        .then(html => {
+          infoPanel.innerHTML = html;
+        })
+        .catch(err => {
+          console.error(err);
+          infoPanel.innerHTML = '<p style="text-align:center;margin-top:2rem;color:red;">Creators page unavailable right now.</p>';
+        });
+    }
+
+    // ---------- CACHED CHAMPIONS (for tierlist) ----------
+    let tierlistChampions = null;
+
+    function getTierColor(tier) {
+      if (tier >= 10) return { bg: '#cc0000', text: 'black' };
+      if (tier >= 9)  return { bg: '#ea4335', text: 'black' };
+      if (tier >= 8)  return { bg: '#ea6435', text: 'black' };
+      if (tier >= 7)  return { bg: '#e69138', text: 'black' };
+      if (tier >= 6)  return { bg: '#f1c232', text: 'black' };
+      if (tier >= 5)  return { bg: '#ffd966', text: 'black' };
+      if (tier >= 4)  return { bg: '#d7e455', text: 'black' };
+      if (tier >= 3)  return { bg: '#90d542', text: 'black' };
+      if (tier >= 2)  return { bg: '#4da029', text: 'black' };
+      return              { bg: '#337432', text: 'black' };
+    }
+
+    async function showTierlist() {
+      if (activeChampionItem) {
+        activeChampionItem.classList.remove('active');
+        activeChampionItem = null;
+      }
+      introBackBtn.style.display = 'inline';
+      setSplashBackground(null);
+
+      const infoPanel = document.getElementById('info-panel');
+      infoPanel.innerHTML = '<p style="text-align:center;margin-top:2rem;">Loading tierlist…</p>';
+
+      try {
+        if (!tierlistChampions) {
+          const versionsRes = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
+          const versions = await versionsRes.json();
+          const latestVersion = versions[0];
+          const champsRes = await fetch(`https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/en_US/champion.json`);
+          const champsData = await champsRes.json();
+          tierlistChampions = Object.values(champsData.data);
+        }
+
+        const difficultyMap = {};
+        const fetchPromises = tierlistChampions.map(champ =>
+          fetch(`champions/${champ.id}.json`)
+            .then(res => res.json())
+            .then(data => {
+              const diff = parseFloat(data.difficulty);
+              if (!isNaN(diff)) {
+                const rounded = Math.round(diff);
+                const tier = Math.min(10, Math.max(1, rounded));
+                difficultyMap[champ.id] = tier;
+              }
+            })
+            .catch(() => {})
+        );
+        await Promise.allSettled(fetchPromises);
+
+        const iconBase = `https://ddragon.leagueoflegends.com/cdn/${currentPatchVersion}/img/champion`;
+        let html = '<div class="champion-detail"><h2>Difficulty Tierlist</h2>';
+
+        for (let tier = 10; tier >= 1; tier--) {
+          const { bg, text } = getTierColor(tier);
+          html += `<div class="tier-row">`;
+          html += `<div class="tier-label" style="background-color:${bg};color:${text};">Tier ${tier}</div>`;
+          html += `<div class="tier-content" id="tier-${tier}">`;
+
+          tierlistChampions.forEach(champ => {
+            if (difficultyMap[champ.id] === tier) {
+              const imgUrl = `${iconBase}/${champ.image.full}`;
+              html += `<img src="${imgUrl}" alt="${champ.name}" class="tierlist-champion-icon" loading="lazy" />`;
+            }
+          });
+
+          html += `</div></div>`;
+        }
+
+        html += '</div>';
+        infoPanel.innerHTML = html;
+      } catch (error) {
+        console.error(error);
+        infoPanel.innerHTML = '<p style="color:red;text-align:center;margin-top:2rem;">Could not load tierlist.</p>';
+      }
+    }
+
+    // ---------- LOAD RUNE DEFINITIONS ----------
+    (async function loadRuneData() {
+      try {
+        const versionsRes = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
+        const versions = await versionsRes.json();
+        const latestVersion = versions[0];
+        const runesRes = await fetch(`https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/en_US/runesReforged.json`);
+        runeData = await runesRes.json();
+        runeData.forEach(tree => {
+          tree.slots.forEach(slot => {
+            slot.runes.forEach(rune => {
+              runeMap[rune.id] = { ...rune };
+            });
+          });
+        });
+      } catch (e) {
+        console.error('Failed to load rune data:', e);
+      }
+    })();
+
+    function safeFileName(name) {
+      return name
+        .trim()
+        .replace(/[^a-zA-Z0-9 \-\'\.]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/'/g, '')
+        .replace(/\.+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+        || 'unknown';
+    }
+
+    function itemCleanName(url) {
+      const filename = url.split('/').pop().replace(/\.[^.]+$/, '');
+      return filename.replace(/_/g, ' ');
+    }
+
+    // ---------- BUILD CHAMPION LIST ----------
+    (async () => {
+      const championList = document.getElementById('champion-list');
+      try {
+        const versionsRes = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
+        const versions = await versionsRes.json();
+        const latestVersion = versions[0];
+        currentPatchVersion = latestVersion;
+
+        const champsRes = await fetch(
+          `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/en_US/champion.json`
+        );
+        const champsData = await champsRes.json();
+        const champions = Object.values(champsData.data);
+
+        champions.forEach(champ => {
+          const item = document.createElement('div');
+          item.className = 'champion-item';
+          item.dataset.championId = champ.id;
+          item.dataset.championName = champ.name.toLowerCase();
+
+          const searchTerms = new Set();
+          searchTerms.add(champ.name.toLowerCase());
+          for (const [abbr, target] of Object.entries(ABBREV_TO_CHAMP)) {
+            if (Array.isArray(target)) {
+              if (target.some(t => t.toLowerCase() === champ.name.toLowerCase())) {
+                searchTerms.add(abbr.toLowerCase());
+              }
+            } else {
+              if (target.toLowerCase() === champ.name.toLowerCase()) {
+                searchTerms.add(abbr.toLowerCase());
+              }
+            }
+          }
+          championSearchTerms[champ.id] = Array.from(searchTerms);
+
+          const img = document.createElement('img');
+          img.src = `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/img/champion/${champ.image.full}`;
+          img.alt = champ.name;
+          img.loading = 'lazy';
+
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = champ.name;
+
+          item.appendChild(img);
+          item.appendChild(nameSpan);
+
+          item.addEventListener('click', () => {
+            if (activeChampionItem) {
+              activeChampionItem.classList.remove('active');
+            }
+            activeChampionItem = item;
+            item.classList.add('active');
+            introBackBtn.style.display = 'inline';
+            loadChampionInfo(champ.id, champ.name);
+          });
+
+          championList.appendChild(item);
+          allChampionItems.push(item);
+        });
+
+        preloadSplashImages(champions);
+        setupSearch();
+        loadIntroData();
+
+        // ----- Role filtering initialisation -----
+        await loadChampionRoles();
+        document.querySelectorAll('.role-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            toggleRole(btn.dataset.role);
+          });
+        });
+        applyFilters();  // initial filter run (show all if no roles selected)
+      } catch (error) {
+        championList.innerHTML = '<p style="color:red;padding:1rem;">Could not load champions.</p>';
+        console.error(error);
+      }
+    })();
+
+    function preloadSplashImages(champions) {
+      champions.forEach(champ => {
+        const img = new Image();
+        img.src = CUSTOM_SPLASHES[champ.id] ||
+                  `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${champ.id}_0.jpg?v=${currentPatchVersion}`;
+      });
+    }
+
+    function setupSearch() {
+      const searchInput = document.getElementById('search-input');
+      searchInput.addEventListener('input', applyFilters);
+    }
+
+    function getDifficultyColor(value) {
+      if (value >= 10) return { bg: '#cc0000', text: 'black' };
+      if (value >= 9)  return { bg: '#ea4335', text: 'black' };
+      if (value >= 8)  return { bg: '#ea6435', text: 'black' };
+      if (value >= 7)  return { bg: '#e69138', text: 'black' };
+      if (value >= 6)  return { bg: '#f1c232', text: 'black' };
+      if (value >= 5)  return { bg: '#ffd966', text: 'black' };
+      if (value >= 4)  return { bg: '#d7e455', text: 'black' };
+      if (value >= 3)  return { bg: '#90d542', text: 'black' };
+      if (value >= 2)  return { bg: '#4da029', text: 'black' };
+      return              { bg: '#337432', text: 'black' };
+    }
+
+    function setSplashBackground(championId) {
+      const splashBg = document.getElementById('splash-bg');
+      if (!championId) {
+        splashBg.style.backgroundImage = "url('images/splashes/High_Noon_Locke.jpg')";
+        return;
+      }
+      const splashUrl = CUSTOM_SPLASHES[championId] ||
+        `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${championId}_0.jpg?v=${currentPatchVersion}`;
+      splashBg.style.backgroundImage = `url('${splashUrl}')`;
+    }
+
+    function getAbilityKeyFromUrl(url) {
+      try {
+        const filename = url.split('/').pop().replace(/\.[^.]+$/, '');
+        const lastChar = filename.slice(-1).toUpperCase();
+        if (['Q','W','E','R'].includes(lastChar)) {
+          return lastChar;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    function getYouTubeThumbnail(url) {
+      try {
+        const urlObj = new URL(url);
+        let videoId = null;
+        if (urlObj.hostname.includes('youtube.com') && urlObj.pathname === '/watch') {
+          videoId = urlObj.searchParams.get('v');
+        } else if (urlObj.hostname === 'youtu.be') {
+          videoId = urlObj.pathname.slice(1).split('/')[0];
+        }
+        if (videoId) {
+          return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    async function loadChampionInfo(championId, championName) {
+      const infoPanel = document.getElementById('info-panel');
+      setSplashBackground(championId);
+
+      let data;
+      if (dataCache[championId]) {
+        data = dataCache[championId];
+      } else {
+        let loadingTimer = setTimeout(() => {
+          infoPanel.classList.add('loading');
+        }, 300);
+
+        try {
+          const res = await fetch(`champions/${championId}.json`);
+          if (!res.ok) throw new Error('Not found');
+          data = await res.json();
+          dataCache[championId] = data;
+        } catch (err) {
+          data = null;
+        } finally {
+          clearTimeout(loadingTimer);
+          infoPanel.classList.remove('loading');
+        }
+      }
+
+      renderChampionInfo(championId, championName, data);
+    }
+
+    function renderFullRunePage(runes) {
+      if (!runeData || !runes.primary) return '';
+
+      const primaryTree = runeData.find(t => t.name === runes.primary.style);
+      const secondaryTree = runes.secondary ? runeData.find(t => t.name === runes.secondary.style) : null;
+
+      function getRuneImagePath(runeName) {
+        return `images/runes/${safeFileName(runeName)}.png`;
+      }
+
+      function getTreeIconPath(treeName) {
+        return `images/runes/${safeFileName(treeName)}.png`;
+      }
+
+      let html = '';
+      if (primaryTree) {
+        html += `<div class="rune-tree">`;
+        html += `<h4><img src="${getTreeIconPath(primaryTree.name)}" class="tree-icon" alt=""/>${primaryTree.name}</h4>`;
+        const keystoneSlot = primaryTree.slots[0];
+        html += `<div class="rune-slot-row keystone-row">`;
+        keystoneSlot.runes.forEach(rune => {
+          const isSelected = rune.name === runes.primary.keystone;
+          html += `<img src="${getRuneImagePath(rune.name)}" class="rune-option keystone-option ${isSelected ? 'selected' : 'unselected'}" alt="${rune.name}" data-tooltip="${rune.name}" loading="lazy"/>`;
+        });
+        html += `</div>`;
+        for (let i = 1; i <= 3; i++) {
+          const slot = primaryTree.slots[i];
+          if (!slot) continue;
+          const selectedKey = i === 1 ? runes.primary.row1 : (i === 2 ? runes.primary.row2 : runes.primary.row3);
+          html += `<div class="rune-slot-row">`;
+          slot.runes.forEach(rune => {
+            const isSelected = rune.name === selectedKey;
+            html += `<img src="${getRuneImagePath(rune.name)}" class="rune-option ${isSelected ? 'selected' : 'unselected'}" alt="${rune.name}" data-tooltip="${rune.name}" loading="lazy"/>`;
+          });
+          html += `</div>`;
+        }
+        html += `</div>`;
+      }
+
+      if (secondaryTree && runes.secondary) {
+        html += `<div class="rune-tree">`;
+        html += `<h4><img src="${getTreeIconPath(secondaryTree.name)}" class="tree-icon" alt=""/>${secondaryTree.name}</h4>`;
+        for (let i = 1; i <= 3; i++) {
+          const slot = secondaryTree.slots[i];
+          if (!slot) continue;
+          html += `<div class="rune-slot-row">`;
+          slot.runes.forEach(rune => {
+            const isSelected = rune.name === runes.secondary.rune1 || rune.name === runes.secondary.rune2;
+            html += `<img src="${getRuneImagePath(rune.name)}" class="rune-option ${isSelected ? 'selected' : 'unselected'}" alt="${rune.name}" data-tooltip="${rune.name}" loading="lazy"/>`;
+          });
+          html += `</div>`;
+        }
+        html += `</div>`;
+      }
+
+      let statsTreeHTML = '';
+      if (runes.stats && Array.isArray(runes.stats) && runes.stats.length > 0) {
+        statsTreeHTML = `<div class="rune-tree">`;
+        statsTreeHTML += `<h4>Shards</h4>`;
+        statsTreeHTML += `<div class="stats-container">`;
+        for (let rowIdx = 0; rowIdx < STAT_ROWS.length; rowIdx++) {
+          const rowOptions = STAT_ROWS[rowIdx].options;
+          const selectedPath = runes.stats[rowIdx] || '';
+          const selectedBase = selectedPath.split('/').pop().replace('.png', '');
+
+          statsTreeHTML += `<div class="rune-slot-row">`;
+          rowOptions.forEach(opt => {
+            const isSelected = (opt.file === selectedBase);
+            const imgPath = `images/runes/${opt.file}.png`;
+            statsTreeHTML += `<img src="${imgPath}" class="rune-option ${isSelected ? 'selected' : 'unselected'}" alt="${opt.name}" data-tooltip="${opt.name}" loading="lazy"/>`;
+          });
+          statsTreeHTML += `</div>`;
+        }
+        statsTreeHTML += `</div></div>`;
+      }
+
+      return `<div class="rune-page">${html}${statsTreeHTML}</div>`;
+    }
+
+    function renderChampionInfo(championId, championName, data) {
+      const infoPanel = document.getElementById('info-panel');
+      let html = `<div class="champion-detail">`;
+      html += `<div class="champion-title-row">`;
+      html += `<h2>${championName}</h2>`;
+      if (data.lastUpdated || data.updatedBy) {
+        const dateStr = data.lastUpdated || '';
+        const authorStr = data.updatedBy ? ` by ${data.updatedBy}` : '';
+        html += `<span class="champion-meta">Updated${authorStr} ${dateStr}</span>`;
+      }
+      html += `</div>`;
+
+      if (data) {
+        html += `<div class="info-slot"><h3>Matchup Difficulty</h3><div class="phases-row difficulty-phases-row">`;
+
+        html += `<div class="phase-slot difficulty-card">`;
+        html += `<div class="difficulty-top">`;
+        html += `<h4>Difficulty</h4>`;
+        const diffNum = parseFloat(data.difficulty);
+        if (!isNaN(diffNum)) {
+          const { bg, text } = getDifficultyColor(diffNum);
+          html += `<span class="difficulty-badge" style="background-color: ${bg}; color: ${text};">${diffNum} / 10</span>`;
+        } else {
+          html += `<span class="difficulty-badge" style="background:#2a2a18; color:#f0c27a;">${data.difficulty || '?'}</span>`;
+        }
+        html += `</div>`;
+
+        html += `<div class="difficulty-divider"></div>`;
+
+        if (data.phaseDifficulties && Array.isArray(data.phaseDifficulties) && data.phaseDifficulties.length === 3) {
+          html += `<div class="phase-difficulties-row">`;
+          data.phaseDifficulties.forEach(phase => {
+            const pVal = parseFloat(phase.value);
+            const { bg, text } = !isNaN(pVal) ? getDifficultyColor(pVal) : { bg: '#2a2a18', text: '#f0c27a' };
+            html += `<div class="phase-diff-col">`;
+            html += `<span class="phase-diff-label">${phase.label || ''}</span>`;
+            html += `<span class="difficulty-badge" style="background-color: ${bg}; color: ${text};">${!isNaN(pVal) ? pVal : '?'} / 10</span>`;
+            html += `</div>`;
+          });
+          html += `</div>`;
+        }
+        html += `</div>`;
+
+        html += `<div class="phase-slot video-card"><h4>Video Guide`;
+        if (data.videoAuthor) {
+          html += ` <span class="video-author-inline">by ${data.videoAuthor}</span>`;
+        }
+        html += `</h4>`;
+        if (data.videoUrl) {
+          let thumbnailUrl = data.videoThumbnail || null;
+          if (!thumbnailUrl) {
+            thumbnailUrl = getYouTubeThumbnail(data.videoUrl);
+          }
+          if (thumbnailUrl) {
+            html += `<a href="${data.videoUrl}" target="_blank" rel="noopener" class="video-thumbnail-link">`;
+            html += `<img src="${thumbnailUrl}" alt="${data.videoTitle || 'Matchup Video'}" class="video-thumbnail-img" loading="lazy">`;
+            html += `</a>`;
+          } else {
+            html += `<a href="${data.videoUrl}" target="_blank" rel="noopener" class="video-badge" title="${data.videoUrl}">${data.videoTitle || 'Watch Matchup Video'}</a>`;
+          }
+        } else {
+          html += `<span class="no-video">No video</span>`;
+        }
+        html += `</div>`;
+
+        html += `</div></div>`;
+
+        html += `<div class="info-slot"><h3>General Tip</h3><p>${data.generalTip || ''}</p></div>`;
+
+        html += `<div class="info-slot"><h3>Game Phases</h3><div class="phases-row">`;
+        html += `<div class="phase-slot"><h4>Levels 1‑5</h4><p>${data.earlyGame || 'No info yet.'}</p></div>`;
+        html += `<div class="phase-slot"><h4>Levels 6‑10</h4><p>${data.midGame || 'No info yet.'}</p></div>`;
+        html += `<div class="phase-slot"><h4>Levels 11‑18</h4><p>${data.lateGame || 'No info yet.'}</p></div>`;
+        html += `</div></div>`;
+
+        const hasSumms = data.summoners && Array.isArray(data.summoners) && data.summoners.length > 0;
+        const hasAbilities = data.abilityMaxOrder && Array.isArray(data.abilityMaxOrder) && data.abilityMaxOrder.length > 0;
+
+        if (hasSumms || hasAbilities) {
+          html += `<div class="info-slot"><h3>Summoner Spells & Abilities</h3><div class="phases-row">`;
+          html += `<div class="phase-slot"><h4>Summoner Spells</h4>`;
+          if (hasSumms) {
+            html += `<div class="items-row">`;
+            data.summoners.forEach(url => {
+              html += `<img src="${url}" alt="Summoner Spell" class="item-icon" data-tooltip="${itemCleanName(url)}" loading="lazy" />`;
+            });
+            html += `</div>`;
+          } else {
+            html += `<p>No info yet.</p>`;
+          }
+          html += `</div>`;
+          html += `<div class="phase-slot"><h4>Ability Max Order</h4>`;
+          if (hasAbilities) {
+            html += `<div class="items-row">`;
+            data.abilityMaxOrder.forEach((url, idx) => {
+              const abilityKey = getAbilityKeyFromUrl(url) || (idx + 1);
+              html += `<span class="ability-icon-wrap" data-order="${abilityKey}">`;
+              html += `<img src="${url}" alt="Ability ${abilityKey}" class="item-icon" data-tooltip="${itemCleanName(url)}" loading="lazy" />`;
+              html += `</span>`;
+            });
+            html += `</div>`;
+          } else {
+            html += `<p>No info yet.</p>`;
+          }
+          html += `</div>`;
+          html += `</div></div>`;
+        }
+
+        if (data.items) {
+          if (typeof data.items === 'object' && !Array.isArray(data.items)) {
+            html += `<div class="info-slot"><h3>Recommended Items</h3><div class="phases-row">`;
+            const itemPhases = ['starter', 'core', 'situational'];
+            const labels = ['Starter Items', 'Core Items', 'Situational Items'];
+            itemPhases.forEach((phase, idx) => {
+              const phaseItems = data.items[phase] || [];
+              html += `<div class="phase-slot"><h4>${labels[idx]}</h4><div class="items-row">`;
+              phaseItems.forEach(url => {
+                html += `<img src="${url}" alt="Item" class="item-icon" data-tooltip="${itemCleanName(url)}" loading="lazy" />`;
+              });
+              html += `</div></div>`;
+            });
+            html += `</div></div>`;
+          } else if (Array.isArray(data.items) && data.items.length > 0) {
+            html += `<div class="info-slot"><h3>Recommended Items</h3><div class="items-row">`;
+            data.items.forEach(url => {
+              html += `<img src="${url}" alt="Item" class="item-icon" data-tooltip="${itemCleanName(url)}" loading="lazy" />`;
+            });
+            html += `</div></div>`;
+          }
+        } else if (data.itemsImage) {
+          html += `<div class="info-slot"><h3>Recommended Items</h3>`;
+          html += `<img src="${data.itemsImage}" alt="Items vs ${championName}" class="build-image" loading="lazy" />`;
+          html += `</div>`;
+        }
+
+        html += `<div class="info-slot"><h3>Recommended Runes</h3>`;
+        try {
+          if (data.runes) {
+            if (data.runes.primary && data.runes.primary.style) {
+              html += renderFullRunePage(data.runes);
+            } else if (Array.isArray(data.runes)) {
+              html += `<div class="items-row">`;
+              data.runes.forEach(runeUrl => {
+                html += `<img src="${runeUrl}" alt="Rune" class="item-icon" data-tooltip="${itemCleanName(runeUrl)}" loading="lazy" />`;
+              });
+              html += `</div>`;
+            } else {
+              html += `<p>Rune data format not recognised.</p>`;
+            }
+          } else {
+            html += `<p>No runes configured yet.</p>`;
+          }
+        } catch (err) {
+          console.error('Error rendering runes:', err);
+          html += `<p style="color:red;">Could not display runes – check console for details.</p>`;
+        }
+        html += `</div>`;
+
+        html += `<div class="info-slot"><h3>Matchup Note</h3><p>${data.matchupNote || ''}</p></div>`;
+      } else {
+        html += `<div class="info-slot"><h3>Coming Soon</h3><p>No guide written yet.</p></div>`;
+      }
+
+      infoPanel.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
