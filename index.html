@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>The Locke Bible</title>
-  <link rel="icon" type="image/png" href="images/summoners/Locke_R.png">
+  <title>The Ekko Bible</title>
+  <link rel="icon" type="image/png" href="images/summoners/EkkoTheNeeko_PFP.jpg">
   <link rel="stylesheet" href="style.css">
     <!-- Discord / Open Graph embed -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="The Locke Bible">
-  <meta property="og:description" content="From dust - to dust. Learn about Locke here!">
-  <meta property="og:image" content="https://lxver8.github.io/Locke/images/splashes/High_Noon_Locke.jpg">
+  <meta property="og:title" content="The Ekko Bible">
+  <meta property="og:description" content="It's not how much time you have. It's how you use it. Learn about Ekko here">
+  <meta property="og:image" content="https://lxver8.github.io/Ekko/images/splashes/Breakout_True_Damage_Ekko.jpg.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="theme-color" content="#c8aa6e">
@@ -40,7 +40,7 @@
 </div>
     </div>
     <div class="header-center">
-      <h1>The Locke Bible</h1>
+      <h1>The Ekko Bible</h1>
       <div class="header-search">
         <input type="text" id="search-input" placeholder="Search champion..." autocomplete="off" />
       </div>
@@ -52,7 +52,7 @@
   </header>
 
   <div class="main-layout">
-    <div id="splash-bg" class="splash-background" style="background-image: url('images/splashes/High_Noon_Locke.jpg');"></div>
+    <div id="splash-bg" class="splash-background" style="background-image: url('images/splashes/Breakout_True_Damage_Ekko.jpg');"></div>
 
     <div class="champion-sidebar">
       <div id="champion-list" class="champion-list"></div>
@@ -566,7 +566,7 @@
     function setSplashBackground(championId) {
       const splashBg = document.getElementById('splash-bg');
       if (!championId) {
-        splashBg.style.backgroundImage = "url('images/splashes/High_Noon_Locke.jpg')";
+        splashBg.style.backgroundImage = "url('images/splashes/Breakout_True_Damage_Ekko.jpg')";
         return;
       }
       const splashUrl = CUSTOM_SPLASHES[championId] ||
